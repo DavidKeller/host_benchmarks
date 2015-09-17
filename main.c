@@ -140,6 +140,8 @@ create_pci_dev(struct pci_access * pci, char * slot)
         goto pci_get_dev_failed;
     }
 
+    pci_fill_info(dev, PCI_FILL_IDENT);
+
     return dev;
 
 pci_get_dev_failed:
@@ -269,6 +271,16 @@ perform_reads(struct pci_dev * dev,
     }
 }
 
+static void
+print_device_name(struct pci_access * pci, struct pci_dev * dev)
+{
+    char device_name[1024];
+    if (pci_lookup_name(pci, device_name, sizeof(device_name),
+                        PCI_LOOKUP_VENDOR | PCI_LOOKUP_DEVICE,
+                        dev->vendor_id, dev->device_id))
+        fprintf(stdout, "Device: %s\n\n", device_name);
+}
+
 int
 main(int argc, char* argv[])
 {
@@ -292,6 +304,8 @@ main(int argc, char* argv[])
     struct pci_dev * dev = create_pci_dev(pci, cmd_line.slot);
     if (! dev)
         goto create_pci_dev_failed;
+
+    print_device_name(pci, dev);
 
     unsigned long * timestamps
             = malloc(sizeof(*timestamps) * cmd_line.iteration_count);
