@@ -1,5 +1,13 @@
-CFLAGS+=-O3 -Wall
-LFLAGS+=-lpci -lgsl -lgslcblas -lm
+CFLAGS=-O3 -Wall
+LIBS=-lpci -lgsl -lgslcblas -lm
 
-pcie_latency_benchmark: main.c
-	$(CC) $(CFLAGS) $(LFLAGS) -o $@ $^
+OUT=pcie_latency_benchmark
+
+$(OUT): main.o
+	$(CC) $(CFLAGS) $(LIBS) -o $@ $^
+
+.PHONY: clean
+
+clean:
+	rm -f *.o $(OUT)
+
