@@ -18,6 +18,7 @@ struct cmd_line
 {
     uint64_t iteration_count;
     uint64_t wait_time_us;
+    uint64_t limit_ns;
     char * slot;
 };
 
@@ -31,7 +32,8 @@ print_usage(const char * name)
                     "\n"
                     "\t -h                 Display this usage message\n"
                     "\t -i ITERATION       Define the read count\n"
-                    "\t -w WAIT_TIME_US    Define the wait between reads\n",
+                    "\t -w WAIT_TIME_US    Define the wait between reads\n"
+                    "\t -l LIMIT_NS        Count the sample above this limit\n",
                     name);
 }
 
@@ -40,11 +42,12 @@ parse_cmd_line(int argc, char * argv[], struct cmd_line * cmd_line)
 {
     int err = -1;
 
-    cmd_line->iteration_count = 1000 * 1000;
+    cmd_line->iteration_count = 10 * 1000 * 1000;
     cmd_line->wait_time_us = 0;
+    cmd_line->limit_ns = 0;
 
     int i;
-    while ((i = getopt(argc, argv, "hi:w:")) != -1)
+    while ((i = getopt(argc, argv, "hi:w:l:")) != -1)
         switch(i)
         {
             default:
@@ -56,6 +59,9 @@ parse_cmd_line(int argc, char * argv[], struct cmd_line * cmd_line)
                 break;
             case 'w':
                 cmd_line->wait_time_us = atoll(optarg);
+                break;
+            case 'l':
+                cmd_line->limit_ns = atoll(optarg);
                 break;
         }
 
@@ -165,9 +171,9 @@ fopen_failed:
 }
 
 static size_t
-above(unsigned long * timestamps,
-      size_t iteration_count,
-      double limit)
+above(double limit,
+      unsigned long * timestamps,
+      size_t iteration_count)
 {
     size_t count = 0;
 
@@ -179,20 +185,42 @@ above(unsigned long * timestamps,
 }
 
 static void
-print_results(unsigned long * timestamps,
-              size_t iteration_count,
-              unsigned long test_duration_cycles)
+print_results_above(uint64_t limit_ns,
+                    double ns_per_cycle,
+                    unsigned long * timestamps,
+                    size_t iteration_count,
+                    double max)
 {
+    double limit = limit_ns / ns_per_cycle;
+    if (limit >= max)
+        return;
+
+    double range = max - limit;
+    double delta = range / 5.;
+
+    fprintf(stdout, "\n");
+
+    for (; limit < max; limit += delta)
+        fprintf(stdout, "Above %'.0lf ns: %'zu\n",
+                limit * ns_per_cycle,
+                above(limit, timestamps, iteration_count));
+}
+
+static void
+print_results(double cpu_mhz,
+              unsigned long * timestamps,
+              size_t iteration_count,
+              unsigned long test_duration_cycles,
+              uint64_t limit_ns)
+{
+    double ns_per_cycle = 1000. / cpu_mhz;
+
     size_t min_index = gsl_stats_ulong_min_index(timestamps, 1,
                                                  iteration_count);
     size_t max_index = gsl_stats_ulong_max_index(timestamps, 1,
                                                  iteration_count);
-    double cpu_mhz = get_cpu_mhz();
-    double ns_per_tick = 1000. / cpu_mhz;
-
     double mean = gsl_stats_ulong_mean(timestamps, 1, iteration_count);
     double sd = gsl_stats_ulong_sd(timestamps, 1, iteration_count);
-    double limit = mean + 2 * sd;
 
     fprintf(stdout, "Samples count: %'zu\n"
                     "Sampling duration: %'.0lf ms\n"
@@ -202,17 +230,22 @@ print_results(unsigned long * timestamps,
                     "Mean: %'.0lf ns\n"
                     "Max: %'.0lf ns @%zu\n"
                     "\n"
-                    "Std: %'.0lf ns\n"
-                    "Above %'.0lf: %'zu\n",
+                    "Std: %'.0lf ns\n",
             iteration_count,
-            test_duration_cycles * ns_per_tick / (1000. * 1000.),
+            test_duration_cycles * ns_per_cycle / (1000. * 1000.),
             cpu_mhz,
-            ns_per_tick * timestamps[min_index], min_index,
-            ns_per_tick * mean,
-            ns_per_tick * timestamps[max_index], max_index,
-            ns_per_tick * sd,
-            ns_per_tick * limit,
-            above(timestamps, iteration_count, limit));
+            ns_per_cycle * timestamps[min_index], min_index,
+            ns_per_cycle * mean,
+            ns_per_cycle * timestamps[max_index], max_index,
+            ns_per_cycle * sd);
+
+    if (limit_ns)
+        print_results_above(limit_ns,
+                            ns_per_cycle,
+                            timestamps,
+                            iteration_count,
+                            timestamps[max_index]);
+
 }
 
 static void
@@ -280,13 +313,20 @@ main(int argc, char* argv[])
 
     unsigned long test_duration_cycles = cycle_since_timestamp(&t);
 
-    print_results(timestamps,
+    double cpu_mhz = get_cpu_mhz();
+    if (cpu_mhz < 0)
+        goto get_cpu_mhz_failed;
+
+    print_results(cpu_mhz,
+                  timestamps,
                   cmd_line.iteration_count,
-                  test_duration_cycles);
+                  test_duration_cycles,
+                  cmd_line.limit_ns);
 
 
     err = EXIT_SUCCESS;
 
+get_cpu_mhz_failed:
     free(timestamps);
 malloc_failed:
     pci_free_dev(dev);
