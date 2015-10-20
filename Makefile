@@ -1,13 +1,8 @@
-CFLAGS=-O3 -Wall
-LIBS=-lpci -lgsl -lgslcblas -lm
+CFLAGS=-O3 -Wall -lpci -lgsl -lgslcblas -lm
 
-OUT=pcie_latency_benchmark
+all: pcie_latency_benchmark cpu_spikes
 
-$(OUT): main.o
-	$(CC) $(CFLAGS) $(LIBS) -o $@ $^
+pcie_latency_benchmark:
 
-.PHONY: clean
-
-clean:
-	rm -f *.o $(OUT)
+cpu_spikes:
 
