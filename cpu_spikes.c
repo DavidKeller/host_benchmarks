@@ -108,18 +108,18 @@ main(int argc, char* argv[])
 
     size_t spikes_count = 0;
 
-    struct timestamp initial_timestamp;
-    read_timestamp_counter(&initial_timestamp);
-
-    struct timestamp t[2];
-    read_timestamp_counter(&t[0]);
-
     struct spike * spikes = calloc(1000, sizeof(struct spike));
     if (! spikes) {
         fprintf(stderr, "Failed to allocate spikes %s\n",
                 strerror(errno));
         goto calloc_failed;
     }
+
+    struct timestamp initial_timestamp;
+    read_timestamp_counter(&initial_timestamp);
+
+    struct timestamp t[2];
+    read_timestamp_counter(&t[0]);
 
     size_t i;
     for (i = 1; i < cmd_line.iteration_count; ++ i)
@@ -151,12 +151,10 @@ main(int argc, char* argv[])
 
     fprintf(stdout, "Iterations count: %'zu\n"
                     "Sampling duration: %'.0lf ms\n"
-                    "Detected frequency: %.0lf Mhz\n"
-                    "Spikes count: %'"PRIu64"\n",
+                    "Detected frequency: %.0lf Mhz\n",
                     cmd_line.iteration_count,
                     cycle_since_timestamp(&initial_timestamp) / cycles_per_ms,
-                    cpu_mhz,
-                    spikes_count);
+                    cpu_mhz);
 
     err = EXIT_SUCCESS;
 
