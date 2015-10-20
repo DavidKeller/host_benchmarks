@@ -64,6 +64,29 @@ arg_check_failed:
     return err;
 }
 
+#define MAX_SPIKES 1000
+
+struct spike
+{
+    uint64_t cycles_delta;
+    struct timestamp timestamp;
+};
+
+static void
+print_spikes(struct spike * spikes, size_t spikes_count,
+             double cycles_per_ns, struct timestamp * initial_timestamp)
+{
+    size_t i;
+    for (i = 0; i < spikes_count; ++i)
+    {
+        uint64_t cycles_delta = diff_timestamps(initial_timestamp,
+                                                &spikes[i].timestamp);
+        fprintf(stdout, "Spike: %'7.0lfns @ %'12.0lfns\n",
+                spikes[i].cycles_delta / cycles_per_ns,
+                cycles_delta / cycles_per_ns);
+    }
+}
+
 int
 main(int argc, char* argv[])
 {
@@ -85,19 +108,44 @@ main(int argc, char* argv[])
 
     size_t spikes_count = 0;
 
-    struct timestamp before;
-    read_timestamp_counter(&before);
+    struct timestamp initial_timestamp;
+    read_timestamp_counter(&initial_timestamp);
 
     struct timestamp t[2];
     read_timestamp_counter(&t[0]);
 
+    struct spike * spikes = calloc(1000, sizeof(struct spike));
+    if (! spikes) {
+        fprintf(stderr, "Failed to allocate spikes %s\n",
+                strerror(errno));
+        goto calloc_failed;
+    }
+
     size_t i;
     for (i = 1; i < cmd_line.iteration_count; ++ i)
     {
-        read_timestamp_counter(&t[ i % 2]);
-        if (diff_timestamps(&t[(i - 1) % 2], &t[i % 2]) > cycles_limit)
+        read_timestamp_counter(&t[i % 2]);
+        uint64_t diff = diff_timestamps(&t[(i - 1) % 2], &t[i % 2]);
+        if (diff > cycles_limit)
+        {
+            spikes[spikes_count].cycles_delta = diff;
+            memcpy(&spikes[spikes_count].timestamp,
+                   &t[i % 2], sizeof(struct timestamp));
             ++ spikes_count;
+
+            if (spikes_count == MAX_SPIKES)
+            {
+                print_spikes(spikes, spikes_count,
+                             cycles_per_ns, &initial_timestamp);
+                spikes_count = 0;
+            }
+
+            read_timestamp_counter(&t[ i % 2]);
+        }
     }
+
+    print_spikes(spikes, spikes_count,
+                 cycles_per_ns, &initial_timestamp);
 
     const double cycles_per_ms = cpu_mhz * 1e3;
 
@@ -106,12 +154,14 @@ main(int argc, char* argv[])
                     "Detected frequency: %.0lf Mhz\n"
                     "Spikes count: %'"PRIu64"\n",
                     cmd_line.iteration_count,
-                    cycle_since_timestamp(&before) / cycles_per_ms,
+                    cycle_since_timestamp(&initial_timestamp) / cycles_per_ms,
                     cpu_mhz,
                     spikes_count);
 
     err = EXIT_SUCCESS;
 
+    free(spikes);
+calloc_failed:
 get_cpu_mhz_failed:
 arg_check_failed:
     return err;
