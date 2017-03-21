@@ -160,13 +160,13 @@ print_results_above(uint64_t limit_ns,
 }
 
 static void
-print_results(double cpu_mhz,
+print_results(double tsc_ghz,
               unsigned long * timestamps,
               size_t iteration_count,
               unsigned long test_duration_cycles,
               uint64_t limit_ns)
 {
-    double ns_per_cycle = 1000. / cpu_mhz;
+    double ns_per_cycle = 1. / tsc_ghz;
 
     size_t min_index = gsl_stats_ulong_min_index(timestamps, 1,
                                                  iteration_count);
@@ -177,7 +177,7 @@ print_results(double cpu_mhz,
 
     fprintf(stdout, "Samples count: %'zu\n"
                     "Sampling duration: %'.0lf ms\n"
-                    "Detected frequency: %.0lf Mhz\n"
+                    "Detected frequency: %.3lf GHz\n"
                     "\n"
                     "Min: %'.0lf ns @%zu\n"
                     "Mean: %'.0lf ns\n"
@@ -186,7 +186,7 @@ print_results(double cpu_mhz,
                     "Std: %'.0lf ns\n",
             iteration_count,
             test_duration_cycles * ns_per_cycle / (1000. * 1000.),
-            cpu_mhz,
+            tsc_ghz,
             ns_per_cycle * timestamps[min_index], min_index,
             ns_per_cycle * mean,
             ns_per_cycle * timestamps[max_index], max_index,
@@ -278,11 +278,14 @@ main(int argc, char* argv[])
 
     unsigned long test_duration_cycles = cycle_since_timestamp(&t);
 
-    double cpu_mhz = get_cpu_mhz();
-    if (cpu_mhz < 0)
-        goto get_cpu_mhz_failed;
+    double tsc_ghz = get_tsc_ghz();
+    if (tsc_ghz == 0.) {
+        fprintf(stderr, "Can't retrieve tsc frequency (%s)\n",
+                strerror(errno));
+        goto get_tsc_ghz_failed;
+    }
 
-    print_results(cpu_mhz,
+    print_results(tsc_ghz,
                   timestamps,
                   cmd_line.iteration_count,
                   test_duration_cycles,
@@ -291,7 +294,7 @@ main(int argc, char* argv[])
 
     err = EXIT_SUCCESS;
 
-get_cpu_mhz_failed:
+get_tsc_ghz_failed:
     free(timestamps);
 malloc_failed:
     pci_free_dev(dev);

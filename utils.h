@@ -32,6 +32,8 @@ SOFTWARE.
 #include <stdint.h>
 #include <unistd.h>
 #include <inttypes.h>
+#include <time.h>
+#include <pthread.h>
 
 struct timestamp {
     uint32_t coreId;
@@ -72,26 +74,47 @@ cycle_since_timestamp(const struct timestamp * previous)
 }
 
 static inline double
-get_cpu_mhz()
+get_tsc_ghz(void)
 {
-    double result = -1.;
+    double res = 0.;
 
-    FILE * cpuinfo = fopen("/proc/cpuinfo", "r");
-    if (! cpuinfo)
-    {
-        fprintf(stderr, "Failed to open /proc/cpuinfo (%s)",
-                strerror(errno));
-        goto fopen_failed;
+    cpu_set_t current_cpuset;
+    if (pthread_getaffinity_np(pthread_self(),
+                               sizeof(current_cpuset),
+                               &current_cpuset))
+        goto pthread_getaffinity_np_failed;
+
+    if (CPU_COUNT(&current_cpuset) != 1) {
+        errno = EINVAL;
+        goto affinity_check_failed;
     }
 
-    char line[4096];
-    while (fgets(line, sizeof(line), cpuinfo) &&
-           sscanf(line, "cpu MHz : %lf", &result) == 0)
-        continue;
+    struct timespec begin_time;
+    if (clock_gettime(CLOCK_MONOTONIC, &begin_time))
+        goto clock_gettime_failed;
 
-    fclose(cpuinfo);
-fopen_failed:
-    return result;
+    struct timestamp begin_ts;
+    read_timestamp_counter(&begin_ts);
+
+    if (sleep(1))
+        goto sleep_failed;
+
+    struct timespec end_time;
+    if (clock_gettime(CLOCK_MONOTONIC, &end_time))
+        goto clock_gettime_failed;
+
+    double diff_cycles = cycle_since_timestamp(&begin_ts);
+
+    double diff_ns = (end_time.tv_sec - begin_time.tv_sec) * 1e9;
+    diff_ns += end_time.tv_nsec - begin_time.tv_nsec;
+
+    res = diff_cycles / diff_ns;
+
+sleep_failed:
+clock_gettime_failed:
+affinity_check_failed:
+pthread_getaffinity_np_failed:
+    return res;
 }
 
 static inline size_t

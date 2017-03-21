@@ -123,11 +123,14 @@ main(int argc, char* argv[])
     if (parse_cmd_line(argc, argv, &cmd_line) < 0)
         goto arg_check_failed;
 
-    const double cpu_mhz = get_cpu_mhz();
-    if (cpu_mhz < 0)
+    const double tsc_ghz = get_tsc_ghz();
+    if (tsc_ghz == 0.) {
+        fprintf(stderr, "Can't retrieve tsc frequency (%s)\n",
+                strerror(errno));
         goto get_cpu_mhz_failed;
+    }
 
-    const double cycles_per_ns = cpu_mhz / 1e3;
+    const double cycles_per_ns = tsc_ghz;
     const double cycles_limit = cycles_per_ns * cmd_line.limit_ns;
 
     size_t spikes_count = 0;
@@ -171,14 +174,14 @@ main(int argc, char* argv[])
     print_spikes(spikes, spikes_count,
                  cycles_per_ns, &initial_timestamp);
 
-    const double cycles_per_ms = cpu_mhz * 1e3;
+    const double cycles_per_ms = tsc_ghz * 1e6;
 
     fprintf(stdout, "Iterations count: %'zu\n"
                     "Sampling duration: %'.0lf ms\n"
-                    "Detected frequency: %.0lf Mhz\n",
+                    "Detected TSC frequency: %.2lf GHz\n",
                     cmd_line.iteration_count,
                     cycle_since_timestamp(&initial_timestamp) / cycles_per_ms,
-                    cpu_mhz);
+                    tsc_ghz);
 
     err = EXIT_SUCCESS;
 
